@@ -5,9 +5,15 @@ use async_recursion::async_recursion;
 use futures::future::join_all;
 use walkdir::WalkDir;
 
-use crate::{handlers::{
-    borg::{BorgCreateOptions, BorgCreateTask}, exclude::{self, BorgPattern, GitIgnorePattern}, git::GitSaveTask, toml_config::{load_config, DionysiusConfig, HasInheritableConfig, InheritableConfig, OnRecursion, PushTaskConfig}, trigger::TriggerTask
-}, log::{log, LogLevel}};
+use crate::{
+    handlers::{
+        borg::{BorgCreateOptions, BorgCreateTask},
+        exclude::{BorgPattern, GitIgnorePattern},
+        git::GitSaveTask,
+        toml_config::{load_config, DionysiusConfig, HasInheritableConfig, OnRecursion, PushTaskConfig},
+        trigger::TriggerTask
+    }, log::{log, LogLevel}
+};
 
 // *************************************************************************** //
 // Types and traits
@@ -122,8 +128,12 @@ pub async fn collect_tasks(
             return Ok(());
         }
     }
-    if !search_hidden && current_dir.file_name().unwrap().to_string_lossy().starts_with(".") {
-        return Ok(());
+    if !search_hidden {
+        if let Some(name) = current_dir.file_name() {
+            if name.to_string_lossy().starts_with(".") {
+                return Ok(());
+            }
+        }
     }
 
     // Get configuration
