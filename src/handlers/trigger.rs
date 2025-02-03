@@ -23,7 +23,7 @@ pub struct TriggerTask {
 	pub current_dir: PathBuf
 }
 impl InheritableConfig for TriggerInheriableConfig {
-	fn inherit_from(&self, _: &Self) -> Self{
+	fn inherit_from(&self, _: Option<&Self>) -> Self{
 		unreachable!()
 	}
 }
@@ -35,7 +35,10 @@ impl HasInheritableConfig for TriggerConfig {
 	fn get_assets_config(&self) -> &Self::M {
 		unreachable!()
 	}
-	fn inherit_from(&self, _: &Self) -> Self {
+	fn get_assets_config_mut(&mut self) -> &mut Self::M {
+		unreachable!()
+	}
+	fn get_heritage_config_mut(&mut self) -> &mut Self::M {
 		unreachable!()
 	}
 }

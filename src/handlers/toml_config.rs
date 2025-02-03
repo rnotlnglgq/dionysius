@@ -50,6 +50,31 @@ pub enum PushTaskConfig {
 }
 //TODO: make an unwrap macro
 impl PushTaskConfig {
+    pub fn get_git(&self) -> Option<&GitConfig> {
+        match self {
+            PushTaskConfig::Git(git_config) => Some(git_config),
+            _ => None
+        }
+    }
+    pub fn get_git_mut(&mut self) -> Option<&mut GitConfig> {
+        match self {
+            PushTaskConfig::Git(git_config) => Some(git_config),
+            _ => None
+        }
+    }
+    pub fn get_borg(&self) -> Option<&BorgConfig> {
+        match self {
+            PushTaskConfig::Borg(borg_config) => Some(borg_config),
+            _ => None
+        }
+    }
+    pub fn get_borg_mut(&mut self) -> Option<&mut BorgConfig> {
+        match self {
+            PushTaskConfig::Borg(borg_config) => Some(borg_config),
+            _ => None
+        }
+    }
+
     pub fn accepted_trigger(&self) -> Vec<String> {
         match self {
             PushTaskConfig::Git(git_config) => {
@@ -247,7 +272,7 @@ impl Default for OnRecursion {
 }
 
 pub trait InheritableConfig {
-    fn inherit_from(&self, other: &Self) -> Self;
+    fn inherit_from(&self, other: Option<&Self>) -> Self;
 }
 
 pub trait HasInheritableConfig {
@@ -257,17 +282,23 @@ pub trait HasInheritableConfig {
     fn get_assets_config(&self) -> &Self::M;
     fn get_heritage_config_mut(&mut self) -> &mut Self::M;
     fn get_assets_config_mut(&mut self) -> &mut Self::M;
-    fn inherit_from(&self, super_config: &Option<Self>) -> Self where Self: Sized + Clone {
+    fn inherit_from(&self, opt_super_config: Option<&Self>) -> Self where Self: Sized + Clone {
         let mut this = self.clone();
-        if let Some(super_config) = super_config {
+        if let Some(super_config) = opt_super_config {
             *this.get_assets_config_mut() = this.get_assets_config()
                 .inherit_from(
-                    super_config.get_heritage_config()
+                    Some(super_config.get_heritage_config())
                 );
             *this.get_heritage_config_mut() = this.get_heritage_config()
-                .inherit_from(super_config.get_heritage_config());
+                .inherit_from(
+                    Some(super_config.get_heritage_config())
+                );
             this
         } else {
+            *this.get_assets_config_mut() = this.get_assets_config()
+                .inherit_from(None);
+            *this.get_heritage_config_mut() = this.get_heritage_config()
+                .inherit_from(None);
             this
         }
     }

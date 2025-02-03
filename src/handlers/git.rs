@@ -304,11 +304,18 @@ impl HasInheritableConfig for GitConfig {
 }
 
 impl InheritableConfig for GitInheritableConfig {
-    fn inherit_from(&self, super_config: &Self) -> Self {
+    fn inherit_from(&self, super_config: Option<&Self>) -> Self {
         let mut this = self.clone();
         match self.on_recursion {
             Some(OnRecursion::Inherit) => {
-                this.on_recursion = super_config.on_recursion.clone();
+                match super_config {
+                    Some(super_config) => {
+                        this.on_recursion = super_config.on_recursion.clone();
+                    },
+                    None => {
+                        this.on_recursion = Some(OnRecursion::default());
+                    }
+                }
             },
             None => unreachable!(),
             _ => {}

@@ -1,3 +1,4 @@
+use core::panic;
 use std::{path::PathBuf, sync::{Arc, Mutex}};
 use tokio;
 use async_recursion::async_recursion;
@@ -5,7 +6,7 @@ use futures::future::join_all;
 use walkdir::WalkDir;
 
 use crate::{handlers::{
-    borg::{BorgCreateOptions, BorgCreateTask}, exclude::{self, BorgPattern, GitIgnorePattern}, git::GitSaveTask, toml_config::{load_config, DionysiusConfig, HasInheritableConfig, OnRecursion, PushTaskConfig}, trigger::TriggerTask
+    borg::{BorgCreateOptions, BorgCreateTask}, exclude::{self, BorgPattern, GitIgnorePattern}, git::GitSaveTask, toml_config::{load_config, DionysiusConfig, HasInheritableConfig, InheritableConfig, OnRecursion, PushTaskConfig}, trigger::TriggerTask
 }, log::{log, LogLevel}};
 
 // *************************************************************************** //
@@ -32,12 +33,77 @@ pub struct CliTaskConfig {
 // Functions
 // *************************************************************************** //
 
+fn inherit_config(
+    this_config: &DionysiusConfig,
+    super_config: Option<&DionysiusConfig>
+) -> DionysiusConfig {
+    let mut config_clone = this_config.clone();
+    
+    if let Some(super_config) = super_config {
+        for (field_name, push_config) in this_config.push_task_configs().iter() {
+            use PushTaskConfig::*;
+            match push_config {
+                Git(this_config) => {
+                    let super_push_config_inner = super_config
+                        .git
+                        .as_ref()
+                        .map(|c| c.get_git().unwrap());
+                    let merged = this_config.inherit_from(super_push_config_inner);
+                    config_clone.map_at_push_task_configs_mut(
+                        |field_name_opt| field_name_opt == Some(field_name),
+                        |_| Git(merged.clone())
+                    );
+                },
+                Borg(this_config) => {
+                    let super_push_config_inner = super_config 
+                        .borg
+                        .as_ref()
+                        .map(|c| c.get_borg().unwrap());
+                    let merged = this_config.inherit_from(super_push_config_inner);
+                    config_clone.map_at_push_task_configs_mut(
+                        |field_name_opt| field_name_opt == Some(field_name),
+                        |_| Borg(merged.clone())
+                    );
+                },
+                _ => {
+                    log(LogLevel::Error, format!("Unimplemented inheritance for {:?}", push_config).as_str());
+                    unreachable!()
+                }
+            }
+        }
+    } else {
+        // Inherit from default values when no super config
+        for (field_name, push_config) in this_config.push_task_configs().iter() {
+            use PushTaskConfig::*;
+            match push_config {
+                Git(this_config) => {
+                    let merged = this_config.inherit_from(None);
+                    config_clone.map_at_push_task_configs_mut(
+                        |field_name_opt| field_name_opt == Some(field_name),
+                        |_| Git(merged.clone())
+                    );
+                },
+                Borg(this_config) => {
+                    let merged = this_config.inherit_from(None);
+                    config_clone.map_at_push_task_configs_mut(
+                        |field_name_opt| field_name_opt == Some(field_name),
+                        |_| Borg(merged.clone())
+                    );
+                },
+                _ => {}
+            }
+        }
+    }
+
+    config_clone
+}
+
 #[async_recursion]
 pub async fn collect_tasks(
     task_type_id: &'static str,
     current_dir: PathBuf,
     task_list: Arc<Mutex<TaskList>>,
-    super_config: Option<PushTaskConfig>,
+    super_config: Option<DionysiusConfig>,
     super_exclude_list: Option<Arc<Mutex<Vec<PathBuf>>>>,
     cli_config: CliTaskConfig,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -111,6 +177,9 @@ pub async fn collect_tasks(
         config_ref = DionysiusConfig::git_default_config();
     }
 
+    // Inherit config
+    let config_clone = inherit_config(config_ref, super_config.as_ref());
+    let config_ref = &config_clone;
 
 	// println!("{:?}", config_ref.push_task_configs());
 
@@ -119,38 +188,67 @@ pub async fn collect_tasks(
 
     // Process tasks based on config
     // let mut config_clone = config_ref.clone();
-    // for (_child_task_type_id, ref mut push_config) in config_clone.push_task_configs().into_iter() {
     for (_child_task_type_id, push_config) in config_ref.push_task_configs().iter() {
-		// use colored::Colorize;
-		// println!("{}", format!("child_task_type_id: {:?}", child_task_type_id).red());
         let accepted_trigger = push_config.accepted_trigger();
         if !accepted_trigger.contains(&task_type_id.to_string()) && task_type_id != "trigger" {
             break;
         }
+        // inherit config
         use PushTaskConfig::*;
-        // super_config;
-        let on_recursion: OnRecursion = match (push_config, &super_config) {
-            (Trigger(trigger_config), _) => {
+        // if let Some(ref super_config_unwrapped) = super_config {
+        //     match push_config {
+        //         Trigger(trigger_config) => {
+        //             on_recursion = trigger_config.assets.as_ref().unwrap().on_recursion.clone().expect("`on_recursion` must be manually set for trigger")
+        //         },
+        //         Git(this_config) => {
+        //             let super_push_config_inner = super_config_unwrapped
+        //                 .git
+        //                 .as_ref()
+        //                 .map(|c| {
+        //                     c.get_git().unwrap()
+        //                 });
+        //             let merged = this_config.inherit_from(super_push_config_inner);
+        //             on_recursion = merged.assets.as_ref().unwrap().on_recursion.clone().unwrap()
+        //             ;
+        //             config_clone.git = Some(Git(merged));
+        //         },
+        //         Borg(this_config) => {
+        //             let super_push_config_inner = super_config_unwrapped
+        //                 .borg
+        //                 .as_ref()
+        //                 .map(|c| {
+        //                     c.get_borg().unwrap()
+        //                 });
+        //             let merged = this_config.inherit_from(super_push_config_inner);
+        //             on_recursion = merged.assets.as_ref().unwrap().on_recursion.clone().unwrap()
+        //             ;
+        //             config_clone.git = Some(Borg(merged));
+        //         },
+        //         _ => {
+        //             log(LogLevel::Error, format!("Unimplemented inheritance for {:?}; {:?}", push_config, super_config).as_str());
+        //             unreachable!()
+        //         }
+        //     };
+        // } else {
+        //     on_recursion = OnRecursion::default();
+        // };
+        let on_recursion: OnRecursion = match push_config {
+            Trigger(trigger_config) => {
                 trigger_config.assets.as_ref().unwrap().on_recursion.clone().expect("`on_recursion` must be manually set for trigger")
             },
-            (_, None) => {
-                OnRecursion::Standalone
+            Git(this_config) => {
+                this_config.assets.as_ref().unwrap().on_recursion.clone().unwrap()
             },
-            (Git(this_config), Some(Git(super_push_config))) => {
-                let merged = this_config.inherit_from(super_push_config);
-                merged.assets.unwrap().on_recursion.unwrap()
-            },
-            (Borg(this_config), Some(Borg(super_push_config))) => {
-                let merged = this_config.inherit_from(super_push_config);
-                merged.assets.unwrap().on_recursion.unwrap()
+            Borg(this_config) => {
+                this_config.assets.as_ref().unwrap().on_recursion.clone().unwrap()
             },
             _ => {
                 log(LogLevel::Error, format!("Unimplemented inheritance for {:?}; {:?}", push_config, super_config).as_str());
                 unreachable!()
             }
         };
-        log(LogLevel::Info, format!("{:?}", current_dir).as_str());
-        log(LogLevel::Info, format!("{:?}", super_config).as_str());
+        // log(LogLevel::Info, format!("{:?}", current_dir).as_str());
+        // log(LogLevel::Info, format!("{:?}", super_config).as_str());
         match push_config {
             Git(this_config) => {
                 // currently, current_exclude_list may be updated by multiple triggers.
@@ -165,7 +263,7 @@ pub async fn collect_tasks(
                         task_type_id,
                         &current_dir,
                         task_list.clone(),
-                        Some(push_config.clone()),
+                        Some(config_ref.clone()),
                         current_exclude_list_ref.clone(),
                         cli_config.clone(),
                     ).await?;
@@ -201,7 +299,7 @@ pub async fn collect_tasks(
                         task_type_id,
                         &current_dir,
                         task_list.clone(),
-                        Some(push_config.clone()),
+                        Some(config_ref.clone()),
                         current_exclude_list_ref.clone(),
                         cli_config.clone(),
                     ).await?;
@@ -269,7 +367,7 @@ pub async fn collect_tasks(
                         task_type_id,
                         &current_dir,
                         task_list.clone(),
-                        Some(push_config.clone()),
+                        Some(config_ref.clone()),
                         super_exclude_list.clone().unwrap(),
                         cli_config.clone(),
                     ).await?;
@@ -292,7 +390,7 @@ async fn process_subdirs(
     task_type_id: &'static str,
     current_dir: &PathBuf,
     task_list: Arc<Mutex<TaskList>>,
-    super_config: Option<PushTaskConfig>,
+    super_config: Option<DionysiusConfig>,
     current_exclude_list_ref: Arc<Mutex<Vec<PathBuf>>>,
     cli_config: CliTaskConfig, // 新增参数
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
