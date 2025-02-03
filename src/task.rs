@@ -62,7 +62,7 @@ pub async fn collect_tasks(
 
     // Get configuration
     let config_path = current_dir.join("dionysius.toml");
-    let config;
+    let mut config;
     let config_ref;
     let is_git_repo = current_dir.join(".git").is_dir();
     let config_exist = config_path.exists();
@@ -118,162 +118,169 @@ pub async fn collect_tasks(
     let current_exclude_list_ref = Arc::new(Mutex::new(Vec::new()));
 
     // Process tasks based on config
+    // let mut config_clone = config_ref.clone();
+    // for (_child_task_type_id, ref mut push_config) in config_clone.push_task_configs().into_iter() {
     for (_child_task_type_id, push_config) in config_ref.push_task_configs().iter() {
 		// use colored::Colorize;
 		// println!("{}", format!("child_task_type_id: {:?}", child_task_type_id).red());
         let accepted_trigger = push_config.accepted_trigger();
-        if accepted_trigger.contains(&task_type_id.to_string()) || task_type_id == "trigger" {
-            use PushTaskConfig::*;
-            let on_recursion: OnRecursion = match (push_config, &super_config) {
-                (Trigger(trigger_config), _) => {
-                    trigger_config.as_child.as_ref().unwrap().on_recursion.clone().expect("`on_recursion` must be manually set for trigger")
-                },
-                (_, None) => {
-                    OnRecursion::Standalone
-                },
-                (Git(this_config), Some(Git(super_push_config))) => {
-                    let merged = this_config.inherit_from(super_push_config);
-                    merged.as_child.unwrap().on_recursion.unwrap()
-                },
-                (Borg(this_config), Some(Borg(super_push_config))) => {
-                    let merged = this_config.inherit_from(super_push_config);
-                    merged.as_child.unwrap().on_recursion.unwrap()
-                },
-                _ => {
-                    unreachable!()
-                }
-            };
-            match push_config {
-				Git(this_config) => {
-					// currently, current_exclude_list may be updated by multiple triggers.
-                    let should_create_task = apply_recursion_strategy(
-                        &current_dir,
-                        &on_recursion,
-                        super_exclude_list.clone()
-                    )?;
-                    if should_create_task {
-						// process subdirectories: collect in subdirectories; update this exclude_list 
-						process_subdirs(
-							task_type_id,
-							&current_dir,
-							task_list.clone(),
-							Some(push_config.clone()),
-							current_exclude_list_ref.clone(),
-                            cli_config.clone(),
-						).await?;
-						// reap the exclude_list
-                        let exclude_list = current_exclude_list_ref.lock().unwrap().clone();
-                        let extra_exclude_patterns: Vec<GitIgnorePattern> = cli_exclude_patterns.iter().filter_map(|str| {
-                            GitIgnorePattern::try_from(str.clone()).map_err(|e| {
-                                log(LogLevel::Warn, e);
-                            }).ok()
-                        }).collect();
-                        // create and append the task
-						let task = GitSaveTask {
-                            repo_path: current_dir.clone(),
-                            exclude_list,
-                            unsaved_behavior: this_config.as_child.as_ref().unwrap().on_unsave.as_ref().unwrap().clone(),
-                            extra_exclude_patterns: extra_exclude_patterns,
-                        };
-                        task_list.lock().unwrap().push(Box::new(task));
-                    } else {
-						return Ok(())
-					}
-                },
-				Borg(this_config) => {
-					// currently, current_exclude_list may be updated by multiple triggers.
-                    let should_create_task = apply_recursion_strategy(
-                        &current_dir,
-                        &on_recursion,
-                        super_exclude_list.clone()
-                    )?;
-                    if should_create_task {
-						// process subdirectories: collect in subdirectories; update this exclude_list 
-						process_subdirs(
-							task_type_id,
-							&current_dir,
-							task_list.clone(),
-							Some(push_config.clone()),
-							current_exclude_list_ref.clone(),
-                            cli_config.clone(),
-						).await?;
-						// reap the exclude_list
-                        let exclude_list = current_exclude_list_ref.lock().unwrap().clone();
-                        let mut extra_exclude_patterns: Vec<BorgPattern> = cli_exclude_patterns.iter().filter_map(|str| {
-                            BorgPattern::try_from(str.clone()).map_err(|e| {
-                                log(LogLevel::Warn, e);
-                            }).ok()
-                        }).collect();
-                        if let Some(config_exclude_patterns) = this_config.as_child.as_ref().unwrap().exclude_list.clone() {
-                            extra_exclude_patterns.extend(
-                                config_exclude_patterns.iter().filter_map(|str| {
-                                    BorgPattern::try_from(str.clone()).map_err(|e| {
-                                        log(LogLevel::Warn, e);
-                                    }).ok()
-                                })
-                            );
-                        }
-                        if let Some(extra_exclude_modes) = &this_config.as_child.as_ref().unwrap().extra_exclude_mode {
-                            let gitignore_path = &current_dir.join(".gitignore");
-                            if extra_exclude_modes.contains(&"git".to_string()) && gitignore_path.is_file() {
-                                let patterns = crate::handlers::exclude::read_gitignore(gitignore_path);
-                                patterns.into_iter().filter_map(|p| {
-                                    BorgPattern::try_from(p).map_err(|e| {
-                                        log(LogLevel::Warn, e);
-                                    }).ok()
-                                }).for_each(|pattern| {
-                                    extra_exclude_patterns.push(pattern);
-                                });
-                            }
-                        }
-                        // create and append the task
-						let task = BorgCreateTask {
-							source: current_dir.clone(),
-							target: {
-								match &config_ref.borg {
-									Some(PushTaskConfig::Borg(borg_conf)) => {
-										borg_conf.target.as_ref().unwrap().target.clone().unwrap()
-									},
-									_ => panic!(),
-								}
-							},
-							exclude_list,
-                            extra_exclude_patterns,
-							options: BorgCreateOptions::default()
-                        };
-                        task_list.lock().unwrap().push(Box::new(task));
-                    } else {
-						return Ok(())
-					}
-                },
-                // TODO: allow this to provide config advise as a super.
-				Trigger(this_config) => {
-                    let on_recursion = this_config.as_child.as_ref().unwrap().on_recursion.clone().unwrap();
-					// currently, current_exclude_list may be updated by multiple triggers.
-                    let should_create_task = apply_recursion_strategy(
-                        &current_dir,
-                        &on_recursion,
-                        super_exclude_list.clone()
-                    )?;
-                    if should_create_task {
-						// process subdirectories: collect in subdirectories; update super exclude_list 
-						process_subdirs(
-							task_type_id,
-							&current_dir,
-							task_list.clone(),
-							Some(push_config.clone()),
-							super_exclude_list.clone().unwrap(),
-                            cli_config.clone(),
-						).await?;
-                        // create and append the task
-						let task = TriggerTask {current_dir: current_dir.clone()};
-                        task_list.lock().unwrap().push(Box::new(task));
-                    } else {
-						return Ok(())
-					}
-                },
-				_ => {}
+        if !accepted_trigger.contains(&task_type_id.to_string()) && task_type_id != "trigger" {
+            break;
+        }
+        use PushTaskConfig::*;
+        // super_config;
+        let on_recursion: OnRecursion = match (push_config, &super_config) {
+            (Trigger(trigger_config), _) => {
+                trigger_config.assets.as_ref().unwrap().on_recursion.clone().expect("`on_recursion` must be manually set for trigger")
+            },
+            (_, None) => {
+                OnRecursion::Standalone
+            },
+            (Git(this_config), Some(Git(super_push_config))) => {
+                let merged = this_config.inherit_from(super_push_config);
+                merged.assets.unwrap().on_recursion.unwrap()
+            },
+            (Borg(this_config), Some(Borg(super_push_config))) => {
+                let merged = this_config.inherit_from(super_push_config);
+                merged.assets.unwrap().on_recursion.unwrap()
+            },
+            _ => {
+                log(LogLevel::Error, format!("Unimplemented inheritance for {:?}; {:?}", push_config, super_config).as_str());
+                unreachable!()
             }
+        };
+        log(LogLevel::Info, format!("{:?}", current_dir).as_str());
+        log(LogLevel::Info, format!("{:?}", super_config).as_str());
+        match push_config {
+            Git(this_config) => {
+                // currently, current_exclude_list may be updated by multiple triggers.
+                let should_create_task = apply_recursion_strategy(
+                    &current_dir,
+                    &on_recursion,
+                    super_exclude_list.clone()
+                )?;
+                if should_create_task {
+                    // process subdirectories: collect in subdirectories; update this exclude_list 
+                    process_subdirs(
+                        task_type_id,
+                        &current_dir,
+                        task_list.clone(),
+                        Some(push_config.clone()),
+                        current_exclude_list_ref.clone(),
+                        cli_config.clone(),
+                    ).await?;
+                    // reap the exclude_list
+                    let exclude_list = current_exclude_list_ref.lock().unwrap().clone();
+                    let extra_exclude_patterns: Vec<GitIgnorePattern> = cli_exclude_patterns.iter().filter_map(|str| {
+                        GitIgnorePattern::try_from(str.clone()).inspect_err(|e| {
+                            log(LogLevel::Warn, e);
+                        }).ok()
+                    }).collect();
+                    // create and append the task
+                    let task = GitSaveTask {
+                        repo_path: current_dir.clone(),
+                        exclude_list,
+                        unsaved_behavior: this_config.assets.as_ref().unwrap().on_unsave.as_ref().unwrap().clone(),
+                        extra_exclude_patterns: extra_exclude_patterns,
+                    };
+                    task_list.lock().unwrap().push(Box::new(task));
+                } else {
+                    return Ok(())
+                }
+            },
+            Borg(this_config) => {
+                // currently, current_exclude_list may be updated by multiple triggers.
+                let should_create_task = apply_recursion_strategy(
+                    &current_dir,
+                    &on_recursion,
+                    super_exclude_list.clone()
+                )?;
+                if should_create_task {
+                    // process subdirectories: collect in subdirectories; update this exclude_list 
+                    process_subdirs(
+                        task_type_id,
+                        &current_dir,
+                        task_list.clone(),
+                        Some(push_config.clone()),
+                        current_exclude_list_ref.clone(),
+                        cli_config.clone(),
+                    ).await?;
+                    // reap the exclude_list
+                    let exclude_list = current_exclude_list_ref.lock().unwrap().clone();
+                    let mut extra_exclude_patterns: Vec<BorgPattern> = cli_exclude_patterns.iter().filter_map(|str| {
+                        BorgPattern::try_from(str.clone()).inspect_err(|e| {
+                            log(LogLevel::Warn, e);
+                        }).ok()
+                    }).collect();
+                    if let Some(config_exclude_patterns) = this_config.assets.as_ref().unwrap().exclude_list.clone() {
+                        extra_exclude_patterns.extend(
+                            config_exclude_patterns.iter().filter_map(|str| {
+                                BorgPattern::try_from(str.clone()).inspect_err(|e| {
+                                    log(LogLevel::Warn, e);
+                                }).ok()
+                            })
+                        );
+                    }
+                    if let Some(extra_exclude_modes) = &this_config.assets.as_ref().unwrap().extra_exclude_mode {
+                        let gitignore_path = &current_dir.join(".gitignore");
+                        if extra_exclude_modes.contains(&"git".to_string()) && gitignore_path.is_file() {
+                            let patterns = crate::handlers::exclude::read_gitignore(gitignore_path);
+                            patterns.into_iter().filter_map(|p| {
+                                BorgPattern::try_from(p).inspect_err(|e| {
+                                    log(LogLevel::Warn, e);
+                                }).ok()
+                            }).for_each(|pattern| {
+                                extra_exclude_patterns.push(pattern);
+                            });
+                        }
+                    }
+                    // create and append the task
+                    let task = BorgCreateTask {
+                        source: current_dir.clone(),
+                        target: {
+                            match &config_ref.borg {
+                                Some(PushTaskConfig::Borg(borg_conf)) => {
+                                    borg_conf.target.as_ref().unwrap().target.clone().unwrap()
+                                },
+                                _ => panic!(),
+                            }
+                        },
+                        exclude_list,
+                        extra_exclude_patterns,
+                        options: BorgCreateOptions::default()
+                    };
+                    task_list.lock().unwrap().push(Box::new(task));
+                } else {
+                    return Ok(())
+                }
+            },
+            // TODO: allow this to provide config advise as a super.
+            Trigger(this_config) => {
+                let on_recursion = this_config.assets.as_ref().unwrap().on_recursion.clone().unwrap();
+                // currently, current_exclude_list may be updated by multiple triggers.
+                let should_create_task = apply_recursion_strategy(
+                    &current_dir,
+                    &on_recursion,
+                    super_exclude_list.clone()
+                )?;
+                if should_create_task {
+                    // process subdirectories: collect in subdirectories; update super exclude_list 
+                    process_subdirs(
+                        task_type_id,
+                        &current_dir,
+                        task_list.clone(),
+                        Some(push_config.clone()),
+                        super_exclude_list.clone().unwrap(),
+                        cli_config.clone(),
+                    ).await?;
+                    // create and append the task
+                    let task = TriggerTask {current_dir: current_dir.clone()};
+                    task_list.lock().unwrap().push(Box::new(task));
+                } else {
+                    return Ok(())
+                }
+            },
+            _ => {}
         }
     }
 
@@ -349,6 +356,7 @@ fn apply_recursion_strategy(
             Ok(true)
 		},
 		OnRecursion::Inherit => {
+            log(LogLevel::Error, format!("Unexpected `on_recursion=inherit` in {:?}", current_dir).as_str());
             unreachable!()
 		},
 	}

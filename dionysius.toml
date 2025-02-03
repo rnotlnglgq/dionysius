@@ -7,7 +7,7 @@ target = "~/borg::archive"
 # mode = "gitconfig" # inherit, gitconfig, path
 # target = "" # target is hard to be cross specified by `borg` etc. need further design
 
-# [git.as_child]
+# [git.assets]
 # Only triggerred when the super command is listed in `trigger_by`
 # trigger_by = ["git", "borg"]
 # The behavior when unsaved work is detected
@@ -16,7 +16,7 @@ target = "~/borg::archive"
 # on_recursion = "inherit" # skip, include, s tan da lo ne, double, inherit
 # The protocol to specify the target
 
-# [git.as_super]
+# [git.heritage]
 # When `true`, equivalent to force child as `on_recursion = "include"`
 # ignore_child = false
 # The config to be inherited by child if child was set as `on_recursion = "inherit"`
@@ -24,7 +24,7 @@ target = "~/borg::archive"
 # on_recursion = "skip" # skip, include, standalone, double
 # The config to be inherited by child if child was set as `target_mode = "inherit"`
 
-# [borg.as_child]
+# [borg.assets]
 # trigger_by = ["git", "borg"]
 # on_recursion = "standalone" # skip, include, standalone, double, inherit
 

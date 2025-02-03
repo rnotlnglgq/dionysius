@@ -19,15 +19,15 @@ pub struct BorgTargetConfig {
 #[derive(Debug, Deserialize, Clone, Reflect)]
 pub struct BorgConfig {
     pub target: Option<BorgTargetConfig>,
-    pub as_child: Option<BorgInheritableConfig>,
-    pub as_super: Option<BorgInheritableConfig>,
+    pub assets: Option<BorgInheritableConfig>,
+    pub heritage: Option<BorgInheritableConfig>,
 }
 
 impl Default for BorgConfig {
     fn default() -> Self {
         BorgConfig {
             target: None,
-            as_child: Some(
+            assets: Some(
                 BorgInheritableConfig {
                     trigger_by: vec!["borg".to_string()].into(),
                     exclude_list: None,
@@ -36,7 +36,7 @@ impl Default for BorgConfig {
                     ignore_child: None,
                 }
             ),
-            as_super: Some(
+            heritage: Some(
                 BorgInheritableConfig {
                     trigger_by: None, // temporarily this cannot be inherited.
                     exclude_list: None,
@@ -52,20 +52,20 @@ impl Default for BorgConfig {
 impl HasInheritableConfig for BorgConfig {
 	type M = BorgInheritableConfig;
 
-	fn get_config_as_super(&self) -> &BorgInheritableConfig {
-		self.as_super.as_ref().unwrap()
+	fn get_heritage_config(&self) -> &BorgInheritableConfig {
+		self.heritage.as_ref().unwrap()
 	}
-	fn get_config_as_child(&self) -> &BorgInheritableConfig {
-		self.as_child.as_ref().unwrap()
+	fn get_assets_config(&self) -> &BorgInheritableConfig {
+		self.assets.as_ref().unwrap()
 	}
 
     fn inherit_from(&self, super_config: &Self) -> Self {
         let mut this = self.clone();
-        this.as_child = Some(
-            this.as_child
+        this.assets = Some(
+            this.assets
                 .unwrap()
                 .inherit_from(
-                    super_config.get_config_as_super()
+                    super_config.get_heritage_config()
                 )
         );
         this
@@ -115,14 +115,14 @@ impl CompletableConfig for BorgConfig {
 
     fn is_complete(&self) -> bool {
         // todo: check target
-        if let Some(as_child) = &self.as_child {
+        if let Some(as_child) = &self.assets {
             if !check_fields!(as_child, trigger_by, on_recursion) {
                 return false;
             }
         } else {
             return false;
         }
-        if let Some(as_super) = &self.as_super {
+        if let Some(as_super) = &self.heritage {
             if as_super.exclude_list.is_some() {
                 log(LogLevel::Warn, "Exclude list as super has no effect yet.");
             }
@@ -152,27 +152,27 @@ impl CompletableConfig for BorgConfig {
         }
 
         // complete as_child
-        if let Some(as_child) = &mut result.as_child {
+        if let Some(as_child) = &mut result.assets {
             if as_child.trigger_by.is_none() {
-                as_child.trigger_by = default.as_child.as_ref().unwrap().trigger_by.clone();
+                as_child.trigger_by = default.assets.as_ref().unwrap().trigger_by.clone();
             }
             if as_child.on_recursion.is_none() {
-                as_child.on_recursion = default.as_child.as_ref().unwrap().on_recursion.clone();
+                as_child.on_recursion = default.assets.as_ref().unwrap().on_recursion.clone();
             }
         } else {
-            result.as_child = default.as_child;
+            result.assets = default.assets;
         }
 
         // complete as_super 
-        if let Some(as_super) = &mut result.as_super {
+        if let Some(as_super) = &mut result.heritage {
             if as_super.ignore_child.is_none() {
-                as_super.ignore_child = default.as_super.as_ref().unwrap().ignore_child;
+                as_super.ignore_child = default.heritage.as_ref().unwrap().ignore_child;
             }
             if as_super.on_recursion.is_none() {
-                as_super.on_recursion = default.as_super.as_ref().unwrap().on_recursion.clone();
+                as_super.on_recursion = default.heritage.as_ref().unwrap().on_recursion.clone();
             }
         } else {
-            result.as_super = default.as_super;
+            result.heritage = default.heritage;
         }
 
         Ok(result)

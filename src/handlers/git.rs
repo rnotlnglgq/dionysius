@@ -28,8 +28,8 @@ pub struct GitTargetConfig {
 #[derive(Debug, Deserialize, Clone, Reflect)]
 pub struct GitConfig {
     pub target: Option<GitTargetConfig>,
-    pub as_child: Option<GitInheritableConfig>,
-    pub as_super: Option<GitInheritableConfig>,
+    pub assets: Option<GitInheritableConfig>,
+    pub heritage: Option<GitInheritableConfig>,
 }
 
 #[derive(Debug, Deserialize, Clone, Reflect)]
@@ -272,20 +272,20 @@ impl HasInheritableConfig for GitConfig {
     
     fn inherit_from(&self, super_config: &Self) -> Self {
         let mut this = self.clone();
-        this.as_child = Some(
-            this.as_child
+        this.assets = Some(
+            this.assets
                 .unwrap()
                 .inherit_from(
-                    super_config.get_config_as_super()
+                    super_config.get_heritage_config()
                 )
         );
         this
     }
-    fn get_config_as_child(&self) -> &GitInheritableConfig {
-        self.as_child.as_ref().unwrap()
+    fn get_assets_config(&self) -> &GitInheritableConfig {
+        self.assets.as_ref().unwrap()
     }
-    fn get_config_as_super(&self) -> &GitInheritableConfig {
-        self.as_super.as_ref().unwrap()
+    fn get_heritage_config(&self) -> &GitInheritableConfig {
+        self.heritage.as_ref().unwrap()
     }
 }
 
@@ -322,14 +322,14 @@ impl CompletableConfig for GitConfig {
 
     fn is_complete(&self) -> bool {
         // todo: check target
-        if let Some(as_child) = &self.as_child {
+        if let Some(as_child) = &self.assets {
             if !check_fields!(as_child, trigger_by, on_unsave, on_recursion) {
                 return false;
             }
         } else {
             return false;
         }
-        if let Some(as_super) = &self.as_super {
+        if let Some(as_super) = &self.heritage {
             if !check_fields!(as_super, ignore_child, on_recursion) {
                 return false;
             }
@@ -354,30 +354,30 @@ impl CompletableConfig for GitConfig {
         }
 
         // complete as_child
-        if let Some(as_child) = &mut result.as_child {
+        if let Some(as_child) = &mut result.assets {
             if as_child.trigger_by.is_none() {
-                as_child.trigger_by = default.as_child.as_ref().unwrap().trigger_by.clone();
+                as_child.trigger_by = default.assets.as_ref().unwrap().trigger_by.clone();
             }
             if as_child.on_recursion.is_none() {
-                as_child.on_recursion = default.as_child.as_ref().unwrap().on_recursion.clone();
+                as_child.on_recursion = default.assets.as_ref().unwrap().on_recursion.clone();
             }
             if as_child.on_unsave.is_none() {
-                as_child.on_unsave = default.as_child.as_ref().unwrap().on_unsave.clone();
+                as_child.on_unsave = default.assets.as_ref().unwrap().on_unsave.clone();
             }
         } else {
-            result.as_child = default.as_child;
+            result.assets = default.assets;
         }
 
         // complete as_super 
-        if let Some(as_super) = &mut result.as_super {
+        if let Some(as_super) = &mut result.heritage {
             if as_super.ignore_child.is_none() {
-                as_super.ignore_child = default.as_super.as_ref().unwrap().ignore_child;
+                as_super.ignore_child = default.heritage.as_ref().unwrap().ignore_child;
             }
             if as_super.on_recursion.is_none() {
-                as_super.on_recursion = default.as_super.as_ref().unwrap().on_recursion.clone();
+                as_super.on_recursion = default.heritage.as_ref().unwrap().on_recursion.clone();
             }
         } else {
-            result.as_super = default.as_super;
+            result.heritage = default.heritage;
         }
 
         Ok(result)
@@ -401,13 +401,13 @@ impl Default for GitConfig {
                 mode: "gitconfig".to_string().into(),
                 target: "".to_string().into(),
             }),
-            as_child: Some(GitInheritableConfig {
+            assets: Some(GitInheritableConfig {
                 ignore_child: None,
                 trigger_by: Some(vec!["git".to_string(), "borg".to_string()]),
                 on_unsave: Some(OnUnsave::Save),
                 on_recursion: Some(OnRecursion::Inherit),
             }),
-            as_super: Some(GitInheritableConfig {
+            heritage: Some(GitInheritableConfig {
                 ignore_child: Some(false),
                 trigger_by: None,
                 on_unsave: Some(OnUnsave::Save),
@@ -429,14 +429,14 @@ impl fmt::Display for GitConfig {
             writeln!(f, "  Target Mode: {:?}", target.mode)?;
             writeln!(f, "  Target: {:?}", target.target)?;
         }
-        if let Some(as_child) = &self.as_child {
+        if let Some(as_child) = &self.assets {
             writeln!(f, "  As Child:")?;
             writeln!(f, "    Trigger By: {:?}", as_child.trigger_by)?;
             writeln!(f, "    On Unsave: {:?}", as_child.on_unsave)?;
             writeln!(f, "    On Recursion: {:?}", as_child.on_recursion)?;
             writeln!(f, "    Ignore Child: {:?}", as_child.ignore_child)?;
         }
-        if let Some(as_super) = &self.as_super {
+        if let Some(as_super) = &self.heritage {
             writeln!(f, "  As Super:")?;
             writeln!(f, "    Trigger By: {:?}", as_super.trigger_by)?;
             writeln!(f, "    On Unsave: {:?}", as_super.on_unsave)?;

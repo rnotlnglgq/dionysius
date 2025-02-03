@@ -53,7 +53,7 @@ impl PushTaskConfig {
         match self {
             PushTaskConfig::Git(git_config) => {
                 git_config
-                    .as_child
+                    .assets
                     .as_ref()
                     .unwrap()
                     .trigger_by
@@ -62,7 +62,7 @@ impl PushTaskConfig {
             },
             PushTaskConfig::Borg(borg_config) => {
                 borg_config
-                    .as_child
+                    .assets
                     .as_ref()
                     .unwrap()
                     .trigger_by
@@ -73,6 +73,59 @@ impl PushTaskConfig {
                 vec!["git".to_string(), "borg".to_string()]
             }
         }
+    }
+
+    pub fn super_on_recursion(&self) -> Option<OnRecursion> {
+        match self {
+            PushTaskConfig::Git(git_config) => {
+                git_config
+                    .heritage
+                    .as_ref()
+                    .and_then(|conf| conf.on_recursion.clone())
+                    
+            },
+            PushTaskConfig::Borg(borg_config) => {
+                borg_config
+                    .heritage
+                    .as_ref()
+                    .and_then(|conf| conf.on_recursion.clone())
+            },
+            PushTaskConfig::Trigger(_) => {
+                Some(OnRecursion::Inherit)
+            }
+            
+        }
+    }
+
+    pub fn super_on_recursion_mut(&mut self) -> &mut OnRecursion {
+        match self {
+            PushTaskConfig::Git(git_config) => {
+                git_config
+                    .heritage
+                    .as_mut()
+                    .expect("You should have this after completion")
+                    .on_recursion
+                    .as_mut()
+                    .expect("You should have this after completion")
+            },
+            PushTaskConfig::Borg(borg_config) => {
+                borg_config
+                    .heritage
+                    .as_mut()
+                    .expect("You should have this after completion")
+                    .on_recursion
+                    .as_mut()
+                    .expect("You should have this after completion")
+            },
+            PushTaskConfig::Trigger(_) => {
+                unreachable!()
+            }
+            
+        }
+    }
+
+    pub fn inherit_testament_from(&mut self) {
+
     }
 }
 
@@ -92,6 +145,22 @@ impl DionysiusConfig {
         };
         // println!("{:?}", vec);
         vec
+    }
+
+    pub fn map_at_push_task_configs_mut(
+        &mut self,
+        field_name: &str, // may be generalizable to any boolean function
+        handler: impl Fn(Option<PushTaskConfig>) -> Option<PushTaskConfig>
+    ) {
+        let clone: DionysiusConfig = self.clone();
+        for (i, value) in clone.iter_fields().enumerate() {
+            if clone.name_at(i) == Some(field_name) {
+                let mut_ref = self.field_at_mut(i).unwrap().try_downcast_mut::<Option<PushTaskConfig>>().unwrap();
+                *mut_ref = handler(
+                    value.try_downcast_ref::<Option<PushTaskConfig>>().unwrap().clone()
+                );
+            }
+        };
     }
 }
 
@@ -174,6 +243,12 @@ pub enum OnRecursion {
     Inherit,
 }
 
+impl Default for OnRecursion {
+    fn default() -> Self {
+        OnRecursion::Standalone
+    }
+}
+
 pub trait InheritableConfig {
     fn inherit_from(&self, other: &Self) -> Self;
 }
@@ -181,8 +256,8 @@ pub trait InheritableConfig {
 pub trait HasInheritableConfig {
     type M: InheritableConfig;
 
-    fn get_config_as_super(&self) -> &Self::M;
-    fn get_config_as_child(&self) -> &Self::M;
+    fn get_heritage_config(&self) -> &Self::M;
+    fn get_assets_config(&self) -> &Self::M;
     fn inherit_from(&self, super_config: &Self) -> Self;
 }
 

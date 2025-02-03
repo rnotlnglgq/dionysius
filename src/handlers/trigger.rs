@@ -11,8 +11,8 @@ use super::toml_config::OnRecursion;
 // This is a phantom type.
 #[derive(Debug, Clone, Deserialize, Reflect)]
 pub struct TriggerConfig {
-	pub as_child: Option<TriggerInheriableConfig>,
-	pub as_super: Option<TriggerInheriableConfig>,
+	pub assets: Option<TriggerInheriableConfig>,
+	pub heritage: Option<TriggerInheriableConfig>,
 }
 #[derive(Debug, Clone, Deserialize, Reflect)]
 pub struct TriggerInheriableConfig {
@@ -29,10 +29,10 @@ impl InheritableConfig for TriggerInheriableConfig {
 }
 impl HasInheritableConfig for TriggerConfig {
 	type M = TriggerInheriableConfig;
-	fn get_config_as_super(&self) -> &Self::M {
+	fn get_heritage_config(&self) -> &Self::M {
 		unreachable!()
 	}
-	fn get_config_as_child(&self) -> &Self::M {
+	fn get_assets_config(&self) -> &Self::M {
 		unreachable!()
 	}
 	fn inherit_from(&self, _: &Self) -> Self {
