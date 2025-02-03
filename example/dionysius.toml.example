@@ -1,0 +1,41 @@
+# [common]
+# default_push = ["borg", "git"]
+# ignore = "git"
+# ignore_list = ["/usr/local/texlive"]
+# posix_acl = true
+# numeric_owner = true
+
+[git.target]
+mode = "gitconfig" # inherit, gitconfig, path
+target = "" # target is hard to be cross specified by `borg` etc. need further design
+
+[git.as_child]
+# Only triggerred when the super command is listed in `trigger_by`
+trigger_by = ["git", "borg"]
+# The behavior when unsaved work is detected
+on_unsave = "save" # save, ignore, ask, interrupt
+# The behavior when super command recursively found this child repo
+on_recursion = "inherit" # skip, include, s tan da lo ne, double, inherit
+# The protocol to specify the target
+
+[git.as_super]
+# When `true`, equivalent to force child as `on_recursion = "include"`
+ignore_child = false
+# The config to be inherited by child if child was set as `on_recursion = "inherit"`
+# Dev Note: should panic when canonicalize if it's set to `inherit`
+on_recursion = "skip" # skip, include, standalone, double
+# The config to be inherited by child if child was set as `target_mode = "inherit"`
+
+[borg.as_child]
+trigger_by = ["git", "borg"]
+on_recursion = "standalone" # skip, include, standalone, double, inherit
+
+[borg.target]
+mode = "path"
+target = "/borg::archive"
+
+# [tar]
+
+# [rsync]
+
+# [NTFS]
