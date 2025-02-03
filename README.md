@@ -55,10 +55,17 @@ Options:
   -h, --help                       Print help
 ```
 
-
 ## Design Note
 
-TODO:
+### Exclude List
+
+For a push task, there are multiple lists constructing the final list of files to exclude:
+
+* From command-line option
+* From sub-tasks with certain option of `on_recursion`
+* From `exclude` field in the config file
+
+### TODO:
 
 [ ] possibly convert `exclude_list` as exact pattern, and merge with those pattern. This simplifies codes, but may lower performance due to pattern matching.
 

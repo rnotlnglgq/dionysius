@@ -1,6 +1,5 @@
 use std::path::Path;
 
-
 mod cli;
 mod handlers;
 mod task;

@@ -2,7 +2,7 @@ use std::{path::PathBuf, process::Command};
 use bevy_reflect::Reflect;
 use serde::Deserialize;
 
-use crate::task::PushTask;
+use crate::{log::{log, LogLevel}, task::PushTask};
 
 use super::{exclude::BorgPattern, toml_config::{CompletableConfig, HasInheritableConfig, InheritableConfig, OnRecursion}};
 
@@ -30,6 +30,7 @@ impl Default for BorgConfig {
             as_child: Some(
                 BorgInheritableConfig {
                     trigger_by: vec!["borg".to_string()].into(),
+                    exclude_list: None,
                     extra_exclude_mode: vec!["git".to_string()].into(),
                     on_recursion: Some(OnRecursion::Inherit),
                     ignore_child: None,
@@ -38,6 +39,7 @@ impl Default for BorgConfig {
             as_super: Some(
                 BorgInheritableConfig {
                     trigger_by: None, // temporarily this cannot be inherited.
+                    exclude_list: None,
                     extra_exclude_mode: None,
                     on_recursion: Some(OnRecursion::Inherit),
                     ignore_child: Some(false),
@@ -74,6 +76,7 @@ impl HasInheritableConfig for BorgConfig {
 #[derive(Debug, Deserialize, Clone, Reflect)]
 pub struct BorgInheritableConfig {
     pub trigger_by: Option<Vec<String>>,
+    pub exclude_list: Option<Vec<String>>,
     pub extra_exclude_mode: Option<Vec<String>>,
     pub on_recursion: Option<OnRecursion>,
     pub ignore_child: Option<bool>,
@@ -120,6 +123,9 @@ impl CompletableConfig for BorgConfig {
             return false;
         }
         if let Some(as_super) = &self.as_super {
+            if as_super.exclude_list.is_some() {
+                log(LogLevel::Warn, "Exclude list as super has no effect yet.");
+            }
             if !check_fields!(as_super, ignore_child, on_recursion) {
                 return false;
             }

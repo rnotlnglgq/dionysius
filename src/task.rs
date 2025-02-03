@@ -221,14 +221,20 @@ pub async fn collect_tasks(
 						).await?;
 						// reap the exclude_list
                         let exclude_list = current_exclude_list_ref.lock().unwrap().clone();
-                        let mut extra_exclude_patterns: Vec<BorgPattern> = Vec::new();
-                        extra_exclude_patterns.extend(
-                            cli_exclude_patterns.iter().filter_map(|str| {
-                                BorgPattern::try_from(str.clone()).map_err(|e| {
-                                    log(LogLevel::Warn, e);
-                                }).ok()
-                            })
-                        );
+                        let mut extra_exclude_patterns: Vec<BorgPattern> = cli_exclude_patterns.iter().filter_map(|str| {
+                            BorgPattern::try_from(str.clone()).map_err(|e| {
+                                log(LogLevel::Warn, e);
+                            }).ok()
+                        }).collect();
+                        if let Some(config_exclude_patterns) = borg_config.as_child.as_ref().unwrap().exclude_list.clone() {
+                            extra_exclude_patterns.extend(
+                                config_exclude_patterns.iter().filter_map(|str| {
+                                    BorgPattern::try_from(str.clone()).map_err(|e| {
+                                        log(LogLevel::Warn, e);
+                                    }).ok()
+                                })
+                            );
+                        }
                         if let Some(extra_exclude_modes) = &borg_config.as_child.as_ref().unwrap().extra_exclude_mode {
                             let gitignore_path = &current_dir.join(".gitignore");
                             if extra_exclude_modes.contains(&"git".to_string()) && gitignore_path.is_file() {

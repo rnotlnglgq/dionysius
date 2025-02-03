@@ -220,11 +220,6 @@ pub trait HasInheritableConfig {
 //     pub numeric_owner: Option<bool>,
 // }
 
-pub fn handle_dionysius_toml(dir: &Path) {
-    println!("Found dionysius.toml in: {}", dir.display());
-    todo!("Handle dionysius.toml file");
-}
-
 // *************************************************************************** //
 // Functions
 // *************************************************************************** //
