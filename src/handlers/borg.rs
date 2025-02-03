@@ -58,18 +58,24 @@ impl HasInheritableConfig for BorgConfig {
 	fn get_assets_config(&self) -> &BorgInheritableConfig {
 		self.assets.as_ref().unwrap()
 	}
-
-    fn inherit_from(&self, super_config: &Self) -> Self {
-        let mut this = self.clone();
-        this.assets = Some(
-            this.assets
-                .unwrap()
-                .inherit_from(
-                    super_config.get_heritage_config()
-                )
-        );
-        this
+    fn get_assets_config_mut(&mut self) -> &mut Self::M {
+        self.assets.as_mut().unwrap()
     }
+    fn get_heritage_config_mut(&mut self) -> &mut Self::M {
+        self.heritage.as_mut().unwrap()
+    }
+
+    // fn inherit_from(&self, super_config: &Self) -> Self {
+    //     let mut this = self.clone();
+    //     this.assets = Some(
+    //         this.assets
+    //             .unwrap()
+    //             .inherit_from(
+    //                 super_config.get_heritage_config()
+    //             )
+    //     );
+    //     this
+    // }
 }
 
 

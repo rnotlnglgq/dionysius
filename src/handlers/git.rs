@@ -270,22 +270,36 @@ impl RepoCheck {
 impl HasInheritableConfig for GitConfig {
     type M = GitInheritableConfig;
     
-    fn inherit_from(&self, super_config: &Self) -> Self {
-        let mut this = self.clone();
-        this.assets = Some(
-            this.assets
-                .unwrap()
-                .inherit_from(
-                    super_config.get_heritage_config()
-                )
-        );
-        this
-    }
+    // fn inherit_from(&self, super_config: &Option<Self>) -> Self {
+    //     let mut this = self.clone();
+    //     if let Some(super_config) = super_config {
+    //         this.assets = Some(
+    //             this.assets
+    //                 .unwrap()
+    //                 .inherit_from(
+    //                     super_config.get_heritage_config()
+    //                 )
+    //         );
+    //         this.heritage = Some(
+    //             this.heritage.unwrap()
+    //                 .inherit_from(super_config.get_heritage_config())
+    //         );
+    //         this
+    //     } else {
+    //         this
+    //     }
+    // }
     fn get_assets_config(&self) -> &GitInheritableConfig {
         self.assets.as_ref().unwrap()
     }
     fn get_heritage_config(&self) -> &GitInheritableConfig {
         self.heritage.as_ref().unwrap()
+    }
+    fn get_assets_config_mut(&mut self) -> &mut Self::M {
+        self.assets.as_mut().unwrap()
+    }
+    fn get_heritage_config_mut(&mut self) -> &mut Self::M {
+        self.heritage.as_mut().unwrap()
     }
 }
 

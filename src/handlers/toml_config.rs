@@ -48,6 +48,7 @@ pub enum PushTaskConfig {
     Git(GitConfig),
     Borg(BorgConfig)
 }
+//TODO: make an unwrap macro
 impl PushTaskConfig {
     pub fn accepted_trigger(&self) -> Vec<String> {
         match self {
@@ -123,10 +124,6 @@ impl PushTaskConfig {
             
         }
     }
-
-    pub fn inherit_testament_from(&mut self) {
-
-    }
 }
 
 // *************************************************************************** //
@@ -149,16 +146,16 @@ impl DionysiusConfig {
 
     pub fn map_at_push_task_configs_mut(
         &mut self,
-        field_name: &str, // may be generalizable to any boolean function
-        handler: impl Fn(Option<PushTaskConfig>) -> Option<PushTaskConfig>
+        field_name_filter: impl Fn(Option<&str>) -> bool, // may be generalizable to any boolean function
+        handler: impl Fn(PushTaskConfig) -> PushTaskConfig
     ) {
         let clone: DionysiusConfig = self.clone();
         for (i, value) in clone.iter_fields().enumerate() {
-            if clone.name_at(i) == Some(field_name) {
+            if field_name_filter(clone.name_at(i)) {
                 let mut_ref = self.field_at_mut(i).unwrap().try_downcast_mut::<Option<PushTaskConfig>>().unwrap();
-                *mut_ref = handler(
-                    value.try_downcast_ref::<Option<PushTaskConfig>>().unwrap().clone()
-                );
+                *mut_ref = Some(handler(
+                    value.try_downcast_ref::<Option<PushTaskConfig>>().unwrap().clone().unwrap()
+                ));
             }
         };
     }
@@ -258,7 +255,22 @@ pub trait HasInheritableConfig {
 
     fn get_heritage_config(&self) -> &Self::M;
     fn get_assets_config(&self) -> &Self::M;
-    fn inherit_from(&self, super_config: &Self) -> Self;
+    fn get_heritage_config_mut(&mut self) -> &mut Self::M;
+    fn get_assets_config_mut(&mut self) -> &mut Self::M;
+    fn inherit_from(&self, super_config: &Option<Self>) -> Self where Self: Sized + Clone {
+        let mut this = self.clone();
+        if let Some(super_config) = super_config {
+            *this.get_assets_config_mut() = this.get_assets_config()
+                .inherit_from(
+                    super_config.get_heritage_config()
+                );
+            *this.get_heritage_config_mut() = this.get_heritage_config()
+                .inherit_from(super_config.get_heritage_config());
+            this
+        } else {
+            this
+        }
+    }
 }
 
 // impl fmt::Display for CommonConfig {
