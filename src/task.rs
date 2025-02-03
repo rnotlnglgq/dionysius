@@ -123,11 +123,28 @@ pub async fn collect_tasks(
 		// println!("{}", format!("child_task_type_id: {:?}", child_task_type_id).red());
         let accepted_trigger = push_config.accepted_trigger();
         if accepted_trigger.contains(&task_type_id.to_string()) || task_type_id == "trigger" {
-			// println!("{}", format!("{:?}", &push_config).red());
-			// println!("{}", format!("{:?}", &super_config).red());
-            match (push_config, &super_config) {
-				(PushTaskConfig::Git(git_config), None) => {
-                    let on_recursion = OnRecursion::Standalone;
+            use PushTaskConfig::*;
+            let on_recursion: OnRecursion = match (push_config, &super_config) {
+                (Trigger(trigger_config), _) => {
+                    trigger_config.as_child.as_ref().unwrap().on_recursion.clone().expect("`on_recursion` must be manually set for trigger")
+                },
+                (_, None) => {
+                    OnRecursion::Standalone
+                },
+                (Git(this_config), Some(Git(super_push_config))) => {
+                    let merged = this_config.inherit_from(super_push_config);
+                    merged.as_child.unwrap().on_recursion.unwrap()
+                },
+                (Borg(this_config), Some(Borg(super_push_config))) => {
+                    let merged = this_config.inherit_from(super_push_config);
+                    merged.as_child.unwrap().on_recursion.unwrap()
+                },
+                _ => {
+                    unreachable!()
+                }
+            };
+            match push_config {
+				Git(this_config) => {
 					// currently, current_exclude_list may be updated by multiple triggers.
                     let should_create_task = apply_recursion_strategy(
                         &current_dir,
@@ -140,7 +157,7 @@ pub async fn collect_tasks(
 							task_type_id,
 							&current_dir,
 							task_list.clone(),
-							super_config.clone(),
+							Some(push_config.clone()),
 							current_exclude_list_ref.clone(),
                             cli_config.clone(),
 						).await?;
@@ -155,7 +172,7 @@ pub async fn collect_tasks(
 						let task = GitSaveTask {
                             repo_path: current_dir.clone(),
                             exclude_list,
-                            unsaved_behavior: git_config.as_child.as_ref().unwrap().on_unsave.as_ref().unwrap().clone(),
+                            unsaved_behavior: this_config.as_child.as_ref().unwrap().on_unsave.as_ref().unwrap().clone(),
                             extra_exclude_patterns: extra_exclude_patterns,
                         };
                         task_list.lock().unwrap().push(Box::new(task));
@@ -163,9 +180,7 @@ pub async fn collect_tasks(
 						return Ok(())
 					}
                 },
-				(PushTaskConfig::Git(git_config), Some(PushTaskConfig::Git(super_push_config))) => {
-                    let merged = git_config.inherit_from(super_push_config);
-                    let on_recursion = merged.as_child.unwrap().on_recursion.unwrap();
+				Borg(this_config) => {
 					// currently, current_exclude_list may be updated by multiple triggers.
                     let should_create_task = apply_recursion_strategy(
                         &current_dir,
@@ -178,44 +193,7 @@ pub async fn collect_tasks(
 							task_type_id,
 							&current_dir,
 							task_list.clone(),
-							super_config.clone(),
-							current_exclude_list_ref.clone(),
-                            cli_config.clone(),
-						).await?;
-						// reap the exclude_list
-                        let exclude_list = current_exclude_list_ref.lock().unwrap().clone();
-                        let extra_exclude_patterns: Vec<GitIgnorePattern> = cli_exclude_patterns.iter().filter_map(|str| {
-                            GitIgnorePattern::try_from(str.clone()).map_err(|e| {
-                                log(LogLevel::Warn, e);
-                            }).ok()
-                        }).collect();
-                        // create and append the task
-						let task = GitSaveTask {
-                            repo_path: current_dir.clone(),
-                            exclude_list,
-                            unsaved_behavior: git_config.as_child.as_ref().unwrap().on_unsave.as_ref().unwrap().clone(),
-                            extra_exclude_patterns: extra_exclude_patterns,
-                        };
-                        task_list.lock().unwrap().push(Box::new(task));
-                    } else {
-						return Ok(())
-					}
-                },
-				(PushTaskConfig::Borg(borg_config), None) => {
-                    let on_recursion = OnRecursion::Standalone;
-					// currently, current_exclude_list may be updated by multiple triggers.
-                    let should_create_task = apply_recursion_strategy(
-                        &current_dir,
-                        &on_recursion,
-                        super_exclude_list.clone()
-                    )?;
-                    if should_create_task {
-						// process subdirectories: collect in subdirectories; update this exclude_list 
-						process_subdirs(
-							task_type_id,
-							&current_dir,
-							task_list.clone(),
-							super_config.clone(),
+							Some(push_config.clone()),
 							current_exclude_list_ref.clone(),
                             cli_config.clone(),
 						).await?;
@@ -226,7 +204,7 @@ pub async fn collect_tasks(
                                 log(LogLevel::Warn, e);
                             }).ok()
                         }).collect();
-                        if let Some(config_exclude_patterns) = borg_config.as_child.as_ref().unwrap().exclude_list.clone() {
+                        if let Some(config_exclude_patterns) = this_config.as_child.as_ref().unwrap().exclude_list.clone() {
                             extra_exclude_patterns.extend(
                                 config_exclude_patterns.iter().filter_map(|str| {
                                     BorgPattern::try_from(str.clone()).map_err(|e| {
@@ -235,69 +213,7 @@ pub async fn collect_tasks(
                                 })
                             );
                         }
-                        if let Some(extra_exclude_modes) = &borg_config.as_child.as_ref().unwrap().extra_exclude_mode {
-                            let gitignore_path = &current_dir.join(".gitignore");
-                            if extra_exclude_modes.contains(&"git".to_string()) && gitignore_path.is_file() {
-                                let patterns = crate::handlers::exclude::read_gitignore(gitignore_path);
-                                patterns.into_iter().filter_map(|p| {
-                                    BorgPattern::try_from(p).map_err(|e| {
-                                        log(LogLevel::Warn, e);
-                                    }).ok()
-                                }).for_each(|pattern| {
-                                    extra_exclude_patterns.push(pattern);
-                                });
-                            }
-                        }
-                        // create and append the task
-						let task = BorgCreateTask {
-							source: current_dir.clone(),
-							target: {
-								match &config_ref.borg {
-									Some(PushTaskConfig::Borg(borg_conf)) => {
-										borg_conf.target.as_ref().unwrap().target.clone().unwrap()
-									},
-									_ => panic!(),
-								}
-							},
-							exclude_list,
-                            extra_exclude_patterns,
-							options: BorgCreateOptions::default()
-                        };
-                        task_list.lock().unwrap().push(Box::new(task));
-                    } else {
-						return Ok(())
-					}
-                },
-				(PushTaskConfig::Borg(borg_config), Some(PushTaskConfig::Borg(super_push_config))) => {
-                    let merged = borg_config.inherit_from(super_push_config);
-                    let on_recursion = merged.as_child.unwrap().on_recursion.unwrap();
-					// currently, current_exclude_list may be updated by multiple triggers.
-                    let should_create_task = apply_recursion_strategy(
-                        &current_dir,
-                        &on_recursion,
-                        super_exclude_list.clone()
-                    )?;
-                    if should_create_task {
-						// process subdirectories: collect in subdirectories; update this exclude_list 
-						process_subdirs(
-							task_type_id,
-							&current_dir,
-							task_list.clone(),
-							super_config.clone(),
-							current_exclude_list_ref.clone(),
-                            cli_config.clone(),
-						).await?;
-						// reap the exclude_list
-                        let exclude_list = current_exclude_list_ref.lock().unwrap().clone();
-                        let mut extra_exclude_patterns: Vec<BorgPattern> = Vec::new();
-                        extra_exclude_patterns.extend(
-                            cli_exclude_patterns.iter().filter_map(|str| {
-                                BorgPattern::try_from(str.clone()).map_err(|e| {
-                                    log(LogLevel::Warn, e);
-                                }).ok()
-                            })
-                        );
-                        if let Some(extra_exclude_modes) = &borg_config.as_child.as_ref().unwrap().extra_exclude_mode {
+                        if let Some(extra_exclude_modes) = &this_config.as_child.as_ref().unwrap().extra_exclude_mode {
                             let gitignore_path = &current_dir.join(".gitignore");
                             if extra_exclude_modes.contains(&"git".to_string()) && gitignore_path.is_file() {
                                 let patterns = crate::handlers::exclude::read_gitignore(gitignore_path);
@@ -331,8 +247,8 @@ pub async fn collect_tasks(
 					}
                 },
                 // TODO: allow this to provide config advise as a super.
-				(PushTaskConfig::Trigger(trigger_config), _) => {
-                    let on_recursion = trigger_config.as_child.as_ref().unwrap().on_recursion.clone().unwrap();
+				Trigger(this_config) => {
+                    let on_recursion = this_config.as_child.as_ref().unwrap().on_recursion.clone().unwrap();
 					// currently, current_exclude_list may be updated by multiple triggers.
                     let should_create_task = apply_recursion_strategy(
                         &current_dir,
@@ -345,7 +261,7 @@ pub async fn collect_tasks(
 							task_type_id,
 							&current_dir,
 							task_list.clone(),
-							super_config.clone(),
+							Some(push_config.clone()),
 							super_exclude_list.clone().unwrap(),
                             cli_config.clone(),
 						).await?;
